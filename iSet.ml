@@ -1,3 +1,4 @@
+
 (** [a +% b = min max_int (a + b)], tylko bez overflowów. *)
 let ( +% ) a b =
   match () with
@@ -5,8 +6,9 @@ let ( +% ) a b =
   | _ -> a + b
 
 (** [a -% b = min max_int (a - b)] dla [a > b], tylko bez overflowów. *)
-let ( -% ) a b =
+let rec ( -% ) a b =
   match () with
+  | _ when a < b -> -(b -% a)
   | _ when Stdlib.compare a 0 = Stdlib.compare b 0 -> a - b
   | _ when a = min_int || b = min_int -> max_int
   | _ -> abs a +% abs b
@@ -14,7 +16,8 @@ let ( -% ) a b =
 type interval = int * int
 (** Przedział liczb od [a] do [b] włącznie. *)
 
-(** Porównuje dwa przedziały: ustalamy, że są równe jeżeli się przecinają. *)
+(** Porównuje dwa przedziały: ustalamy, że są "równe" jeżeli tworzą spójny
+    przedział liczb. *)
 let cmp (a, b) (a', b') =
   match () with
   | _ when max a a' <= min b b' +% 1 -> 0
@@ -30,15 +33,18 @@ let cmp (a, b) (a', b') =
     trzymanych w poddrzewie;
 
     3. [split x s] zwraca dokładną wartość elementu w drzewie równego [x] jeżeli
-    taki istnieje.
+    taki istnieje;
 
-    Ten moduł NIE ROZUMIE co to są przedziały, dopiero my później karmimy go
-    tylko takimi przedziałami, że 1. nie ma sąsiednich; 2. wyszukujemy tylko
-    takie, że się przecinają z co najwyżej jednym przedziałem z seta. *)
+    4. funkcje [remove] i [mem] zostały usunięte, bo nie były używane.
+
+    Ten moduł NIE ROZUMIE co to są przedziały przekształcając swoje drzewko,
+    dopiero my karmimy go tylko takimi przedzialikami, że nie ma żadnych
+    sąsiednich, i wyszukujemy tylko takie, że są "równe" co najwyżej jednej
+    wartości na secie. *)
 
 module PSet = struct
   (** Wierzchołek to lewy syn, wartość, prawy syn, wysokość poddrzewa, populacja
-      poddrzewa. *)
+      poddrzewa. Puste drzewo to [Empty]. *)
   type t = Empty | Node of t * interval * t * int * int
 
   let height = function
@@ -49,10 +55,11 @@ module PSet = struct
     | Node (_, _, _, _, p) -> p
     | Empty -> 0
 
-  let add_population l r (a, b) = population l +% population r +% (b -% a) +% 1
-
   let make l k r =
-    Node (l, k, r, max (height l) (height r) + 1, add_population l r k)
+    let add_populations l r (a, b) =
+      population l +% population r +% (b -% a) +% 1
+    in
+    Node (l, k, r, max (height l) (height r) + 1, add_populations l r k)
 
   let bal l k r =
     let hl = height l in
@@ -149,28 +156,6 @@ module PSet = struct
     let setl, pres, setr = loop x set in
     setl, pres, setr
 
-  let remove x set =
-    let rec loop = function
-      | Node (l, k, r, _, _) ->
-          let c = cmp x k in
-          if c = 0
-          then merge l r
-          else if c < 0
-          then bal (loop l) k r
-          else bal l k (loop r)
-      | Empty -> Empty
-    in
-    loop set
-
-  let mem x set =
-    let rec loop = function
-      | Node (l, k, r, _, _) ->
-          let c = cmp x k in
-          c = 0 || loop (if c < 0 then l else r)
-      | Empty -> false
-    in
-    loop set
-
   let iter f set =
     let rec loop = function
       | Empty -> ()
@@ -198,19 +183,25 @@ end
 
 type t = PSet.t
 
-(** Ta funkcja dzieli podzbiór *)
+(** Dla przedziału [(a, b)] zwraca [left] i [right] -- najbardziej na lewo i na
+    prawo przedziały z seta, które są "równe" [(a, b)], jeśli istnieją, mogą być
+    tym samym przedziałem -- oraz [prefix] i [suffix] -- sety z przedziałami na
+    lewo od [left] i na prawo od [right]. Wszystko pomiędzy [left] a [right]
+    wyrzucamy bo nie jest potrzebne. *)
 let intersect set (a, b) =
-  let superleft, left, rest =
-    PSet.split (a, if a > min_int then a - 1 else a) set
-  in
-  let _, right, superright =
-    PSet.split ((if b < max_int then b + 1 else b), b) rest
-  in
+  (* Przedział (a, a - 1) wyobrazić sobie należy jako przedział sąsiadujący z
+     (_, a - 1), ale nie (a, _), żeby był "równy" co najwyżej jednej wartości na
+     secie. Uważamy też na overflowy intów. *)
+  let prefix, left, rest = PSet.split (a, a -% 1) set in
+  let _, right, suffix = PSet.split (b +% 1, b) rest in
   let right = if Option.is_some right then right else left in
-  superleft, left, right, superright
+  prefix, left, right, suffix
 
 let add (a, b) set =
-  let superleft, left, right, superright = intersect set (a, b) in
+  (* Znajdujemy skrajne przedziały sąsiadujące/przecinające się z (a, b),
+     łączymy je jeśli istnieją a jeśli nie to bierzemy (a, b); zachowujemy
+     wszystko na lewo i na prawo. *)
+  let prefix, left, right, suffix = intersect set (a, b) in
   let a' =
     match left with
     | Some (x, _) when x < a -> x
@@ -220,26 +211,27 @@ let add (a, b) set =
     | Some (_, x) when x > b -> x
     | _ -> b
   in
-  PSet.merge superleft superright |> PSet.add (a', b')
+  PSet.merge prefix suffix |> PSet.add (a', b')
 
 let split x set =
-  let superleft, left, right, superright =
-    intersect set (x, if x > min_int then x - 1 else x)
-  in
-  let new_left =
+  (* Znajdujemy skrajne przedziały sąsiadujące/przecinające się z (x, x),
+     sprawdzamy czy zawierają x-a i kawałkujemy żeby nie zawierały; zachowujemy
+     wszystko na lewo i prawo. *)
+  let prefix, left, right, suffix = intersect set (x, x) in
+  let prefix' =
     match left with
-    | Some (a, _) when a < x -> PSet.add (a, x - 1) superleft
-    | _ -> superleft
-  and present =
+    | Some (a, _) when a < x -> prefix |> PSet.add (a, x - 1)
+    | _ -> prefix
+  and contains_x =
     match left with
     | Some (_, b) when x <= b -> true
     | _ -> false
-  and new_right =
+  and suffix' =
     match right with
-    | Some (_, b) when b > x -> PSet.add (x + 1, b) superright
-    | _ -> superright
+    | Some (_, b) when b > x -> suffix |> PSet.add (x + 1, b)
+    | _ -> suffix
   in
-  new_left, present, new_right
+  prefix', contains_x, suffix'
 
 let empty = PSet.empty
 let is_empty = PSet.is_empty
