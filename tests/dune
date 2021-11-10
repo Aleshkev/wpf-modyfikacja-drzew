@@ -1,0 +1,18 @@
+(tests
+ (names
+  test
+  a_mrowqa_simple_test
+  a_unknown_simp_test
+  a_unknown_test2
+  a_unknown_test3
+  a_unknown_test5
+  a_unknown_test6
+  b_mrowqa_random_test
+  c_mgienieczko
+  d_stackoverflow_test
+  )
+ (flags
+  (:standard -warn-error -a))
+ (ocamlc_flags
+  (:standard -w -a))
+ (libraries iSet pSet))

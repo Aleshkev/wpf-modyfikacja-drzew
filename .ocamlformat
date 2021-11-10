@@ -1,0 +1,8 @@
+# profile=janestreet
+profile=conventional
+module-item-spacing=compact
+# module-item-spacing=sparse
+if-then-else=keyword-first
+wrap-comments=true
+break-cases=toplevel
+parens-tuple=multi-line-only
