@@ -1,60 +1,44 @@
-(*
- * PSet - Polymorphic sets
- * Copyright (C) 1996-2003 Xavier Leroy, Nicolas Cannasse, Markus Mottl
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version,
- * with the special exception on linking described in file LICENSE.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *)
+(** [a +% b = min max_int (a + b)], tylko bez overflowów. *)
+let ( +% ) a b =
+  match () with
+  | _ when a > 0 -> min (min_int + a + b) (-1) - min_int
+  | _ -> a + b
 
-(* Zmiany:
-
-   -> dodana populacja drzewa
-
-   -> [split x s] zwraca dokładną wartość elementu [x] zamiast tylko informacji
-   czy występuje
-
-   -> typ to zawsze [interval], porównanie to zawsze [cmp_interval] *)
+(** [a -% b = min max_int (a - b)] dla [a > b], tylko bez overflowów. *)
+let ( -% ) a b =
+  match () with
+  | _ when Stdlib.compare a 0 = Stdlib.compare b 0 -> a - b
+  | _ when a = min_int || b = min_int -> max_int
+  | _ -> abs a +% abs b
 
 type interval = int * int
+(** Przedział liczb od [a] do [b] włącznie. *)
 
-let debug s = Printf.printf "%s" s
-let m = -min_int;;
-
-assert (min_int = -m && max_int = m - 1)
-
-let ( +% ) a b = if a > 0 then min (-m + a + b) (-1) + m else a + b
-
-let ( -% ) a b =
-  let r =
-    if Stdlib.compare a 0 = Stdlib.compare b 0
-    then a - b
-    else if a == min_int || b == min_int
-    then max_int
-    else abs a +% abs b
-  in
-  (* debug @@ Printf.sprintf "  ( -%% ) %i %i -> %i\n" a b r; *)
-  r
-
-(* let debug _ = () *)
-
+(** Porównuje dwa przedziały: ustalamy, że są równe jeżeli się przecinają. *)
 let cmp (a, b) (a', b') =
-  let r = if max a a' <= min b b' +% 1 then 0 else if b < a' then -1 else 1 in
-  (* debug @@ Printf.sprintf " cmp (%i, %i) (%i, %i) -> %i\n" a b a' b' r; *)
-  r
+  match () with
+  | _ when max a a' <= min b b' +% 1 -> 0
+  | _ when b < a' -> -1
+  | _ -> 1
+
+(** Tutaj jest moduł pSet bardzo mało modyfikowany. Wszystkie zmiany:
+
+    1. typ wartości to zawsze [interval], porównanie to zawsze [cmp], więc
+    PSet.t zostało troszeczkę uproszczone;
+
+    2. każdy wierzchołek przechowuje "populację" -- liczbę liczb w przedziałach
+    trzymanych w poddrzewie;
+
+    3. [split x s] zwraca dokładną wartość elementu w drzewie równego [x] jeżeli
+    taki istnieje.
+
+    Ten moduł NIE ROZUMIE co to są przedziały, dopiero my później karmimy go
+    tylko takimi przedziałami, że 1. nie ma sąsiednich; 2. wyszukujemy tylko
+    takie, że się przecinają z co najwyżej jednym przedziałem z seta. *)
 
 module PSet = struct
+  (** Wierzchołek to lewy syn, wartość, prawy syn, wysokość poddrzewa, populacja
+      poddrzewa. *)
   type t = Empty | Node of t * interval * t * int * int
 
   let height = function
@@ -117,7 +101,6 @@ module PSet = struct
         let k = min_elt t2 in
         bal t1 k (remove_min_elt t2)
 
-  (* let create cmp = { cmp; set = Empty } *)
   let empty = Empty
   let is_empty x = x = Empty
 
@@ -215,20 +198,7 @@ end
 
 type t = PSet.t
 
-let string_of_interval (a, b) = Printf.sprintf "(%i, %i)" a b
-
-let string_of_t t =
-  "{ "
-  ^ String.concat "; " (List.map string_of_interval (PSet.elements t))
-  ^ " }"
-
-let string_of_interval_option = function
-  | Some x -> string_of_interval x
-  | None -> "nil"
-
-let empty = PSet.empty
-let is_empty = PSet.is_empty
-
+(** Ta funkcja dzieli podzbiór *)
 let intersect set (a, b) =
   let superleft, left, rest =
     PSet.split (a, if a > min_int then a - 1 else a) set
@@ -237,11 +207,6 @@ let intersect set (a, b) =
     PSet.split ((if b < max_int then b + 1 else b), b) rest
   in
   let right = if Option.is_some right then right else left in
-  let a', b', d, e = superleft, left, right, superright in
-  (* debug @@ Printf.sprintf " intersect %s %s -> %s %s %s %s\n" (string_of_t
-     set) (string_of_interval (a, b)) (string_of_t a')
-     (string_of_interval_option b') (string_of_interval_option d) (string_of_t
-     e); *)
   superleft, left, right, superright
 
 let add (a, b) set =
@@ -255,15 +220,7 @@ let add (a, b) set =
     | Some (_, x) when x > b -> x
     | _ -> b
   in
-  let r = PSet.merge superleft superright |> PSet.add (a', b') in
-  (* debug
-  @@ Printf.sprintf "  add (%i, %i) %s -> %s\n" a b (string_of_t set)
-       (string_of_t r); *)
-  r
-
-let elements = PSet.elements
-let iter = PSet.iter
-let fold = PSet.fold
+  PSet.merge superleft superright |> PSet.add (a', b')
 
 let split x set =
   let superleft, left, right, superright =
@@ -282,47 +239,23 @@ let split x set =
     | Some (_, b) when b > x -> PSet.add (x + 1, b) superright
     | _ -> superright
   in
-  (* debug
-  @@ Printf.sprintf "  split %s %s -> %s %s %s\n" (string_of_int x)
-       (string_of_t set) (string_of_t new_left) (string_of_bool present)
-       (string_of_t new_right); *)
   new_left, present, new_right
 
+let empty = PSet.empty
+let is_empty = PSet.is_empty
+let elements = PSet.elements
+let iter = PSet.iter
+let fold = PSet.fold
+
 let mem x set =
-  let a, present, b = split x set in
+  let _, present, _ = split x set in
   present
 
 let below x set =
   let lesser_than_x, x_present, _ = split x set in
-  let r = PSet.population lesser_than_x +% if x_present then 1 else 0 in
-  (* debug @@ Printf.sprintf "  below %i %s -> %i\n" x (string_of_t set) r; *)
-  r
+  PSet.population lesser_than_x +% if x_present then 1 else 0
 
 let remove (a, b) set =
   let lesser_than_a, _, _ = split a set in
   let _, _, greater_than_b = split b set in
-  let r = PSet.merge lesser_than_a greater_than_b in
-  (* debug @@ Printf.sprintf " remove %s %s -> %s\n" (string_of_interval (a, b))
-     (string_of_t set) (string_of_t r); *)
-  r
-
-let from_elements = List.fold_left (fun set x -> add x set) empty
-
-(* let test_intersect s x a b d e = let s = from_elements s and a =
-   from_elements a and e = from_elements e in let a', b', d', e' = intersect s x
-   in Printf.printf " split %s on %s\n-> %s %s %s %s\n== %s %s %s %s\n"
-   (string_of_t s) (string_of_interval x) (string_of_t a)
-   (string_of_interval_option b) (string_of_interval_option d) (string_of_t e)
-   (string_of_t a') (string_of_interval_option b') (string_of_interval_option
-   d') (string_of_t e'); print_endline (String.concat ", " (List.map (fun y ->
-   string_of_int @@ cmp x y) (elements s)))
-
-   let a = from_elements [ 1, 3; 5, 5; 7, 8; 9, 9; 11, 11 ]
-
-   let () = print_endline "hi!"; print_endline @@ string_of_t a; test_intersect
-   [ 1, 1; 3, 3; 5, 5; 7, 7; 9, 9 ] (2, 2) [] (Some (1, 1)) (Some (3, 3)) [ 5,
-   5; 7, 7; 9, 9 ]; test_intersect [ 1, 1; 3, 3; 5, 5; 7, 7; 9, 9 ] (5, 5) [ 1,
-   1; 3, 3 ] (Some (5, 5)) None [ 7, 7; 9, 9 ]; test_intersect [ 1, 1; 3, 3; 5,
-   5; 7, 7; 9, 9 ] (5, 6) [ 1, 1; 3, 3 ] (Some (5, 5)) (Some (7, 7)) [ 9, 9 ];
-   test_intersect [ 1, 1; 3, 6; 8, 8 ] (3, 3) [ 1, 1 ] (Some (3, 6)) (Some (3,
-   6)) [ 8, 8 ]; test_intersect [ 10, 12 ] (13, 12) [ 10, 12 ] None None [] *)
+  PSet.merge lesser_than_a greater_than_b

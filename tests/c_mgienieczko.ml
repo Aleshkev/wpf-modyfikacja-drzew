@@ -192,7 +192,6 @@ done
 ;;
 
 if info then print_endline "Starting split";;
-(* print_endline @@ string_of_t a;; *)
 
 for i = 0 to 10000 do
   (fun _ -> ()) (split (min_int + i) a)

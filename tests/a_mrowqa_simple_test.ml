@@ -18,8 +18,6 @@ test 12 (is_empty (add (1, 1) s)) false
 
 let s = add (10, 12) empty;;
 
-print_endline @@ string_of_t s;;
-
 test 21 (mem 9 s) false;;
 test 22 (mem 10 s) true;;
 test 23 (mem 12 s) true;;

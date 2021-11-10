@@ -1,6 +1,5 @@
 (tests
  (names
-  test
   a_mrowqa_simple_test
   a_unknown_simp_test
   a_unknown_test2

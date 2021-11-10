@@ -65,5 +65,3 @@ val split : int -> t -> t * bool * t
     elements of [s] that are strictly greater than [x]; [present] is [false] if
     [s] contains no element equal to [x], or [true] if [s] contains an element
     equal to [x]. *)
-
-val string_of_t : t -> string
