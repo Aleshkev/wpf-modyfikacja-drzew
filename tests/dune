@@ -9,7 +9,7 @@
   b_mrowqa_random_test
   c_mgienieczko
   d_stackoverflow_test
-  )
+  test)
  (flags
   (:standard -warn-error -a))
  (ocamlc_flags
