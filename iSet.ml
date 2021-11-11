@@ -1,4 +1,3 @@
-
 (** [a +% b = min max_int (a + b)], tylko bez overflowów. *)
 let ( +% ) a b =
   match () with
@@ -24,7 +23,7 @@ let cmp (a, b) (a', b') =
   | _ when b < a' -> -1
   | _ -> 1
 
-(** Tutaj jest moduł pSet bardzo mało modyfikowany. Wszystkie zmiany:
+(** Tutaj jest moduł pSet bardzo lekko zmodyfikowany. Wszystkie zmiany:
 
     1. typ wartości to zawsze [interval], porównanie to zawsze [cmp], więc
     PSet.t zostało troszeczkę uproszczone;
@@ -40,9 +39,28 @@ let cmp (a, b) (a', b') =
     Ten moduł NIE ROZUMIE co to są przedziały przekształcając swoje drzewko,
     dopiero my karmimy go tylko takimi przedzialikami, że nie ma żadnych
     sąsiednich, i wyszukujemy tylko takie, że są "równe" co najwyżej jednej
-    wartości na secie. *)
+    wartości w drzewku. *)
 
 module PSet = struct
+  (* PSet - Polymorphic sets
+
+     Copyright (C) 1996-2003 Xavier Leroy, Nicolas Cannasse, Markus Mottl
+
+     This library is free software; you can redistribute it and/or modify it
+     under the terms of the GNU Lesser General Public License as published by
+     the Free Software Foundation; either version 2.1 of the License, or (at
+     your option) any later version, with the special exception on linking
+     described in file LICENSE.
+
+     This library is distributed in the hope that it will be useful, but WITHOUT
+     ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+     FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
+     for more details.
+
+     You should have received a copy of the GNU Lesser General Public License
+     along with this library; if not, write to the Free Software Foundation,
+     Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA *)
+
   (** Wierzchołek to lewy syn, wartość, prawy syn, wysokość poddrzewa, populacja
       poddrzewa. Puste drzewo to [Empty]. *)
   type t = Empty | Node of t * interval * t * int * int
@@ -190,8 +208,8 @@ type t = PSet.t
     wyrzucamy bo nie jest potrzebne. *)
 let intersect set (a, b) =
   (* Przedział (a, a - 1) wyobrazić sobie należy jako przedział sąsiadujący z
-     (_, a - 1), ale nie (a, _), żeby był "równy" co najwyżej jednej wartości na
-     secie. Uważamy też na overflowy intów. *)
+     (_, a - 1), ale nie (a, _) -- żeby był "równy" co najwyżej jednej wartości
+     na secie. Uważamy też na overflowy intów. *)
   let prefix, left, rest = PSet.split (a, a -% 1) set in
   let _, right, suffix = PSet.split (b +% 1, b) rest in
   let right = if Option.is_some right then right else left in
@@ -215,8 +233,8 @@ let add (a, b) set =
 
 let split x set =
   (* Znajdujemy skrajne przedziały sąsiadujące/przecinające się z (x, x),
-     sprawdzamy czy zawierają x-a i kawałkujemy żeby nie zawierały; zachowujemy
-     wszystko na lewo i prawo. *)
+     sprawdzamy czy zawierają x-a, kawałkujemy żeby nie zawierały i doklejamy
+     kawałki do zachowanych wartości z lewej/prawej. *)
   let prefix, left, right, suffix = intersect set (x, x) in
   let prefix' =
     match left with
@@ -240,12 +258,12 @@ let iter = PSet.iter
 let fold = PSet.fold
 
 let mem x set =
-  let _, present, _ = split x set in
-  present
+  let _, contains_x, _ = split x set in
+  contains_x
 
 let below x set =
-  let lesser_than_x, x_present, _ = split x set in
-  PSet.population lesser_than_x +% if x_present then 1 else 0
+  let lesser_than_x, contains_x, _ = split x set in
+  PSet.population lesser_than_x +% if contains_x then 1 else 0
 
 let remove (a, b) set =
   let lesser_than_a, _, _ = split a set in
